@@ -141,7 +141,7 @@ class MainWindow:
                 else:
                     messagebox.showinfo("提示", f"回答错误，正确单词是：'{review_word.word}'")
     def open_help(self):
-        help_url = "https://github.com/Janson20/----/wiki"  # 替换为实际的帮助网站 URL
+        help_url = "https://github.com/Janson20/----/wiki/%E5%B8%AE%E5%8A%A9%E4%B8%BB%E9%A1%B5"  # 替换为实际的帮助网站 URL
         webbrowser.open(help_url)
 
 
