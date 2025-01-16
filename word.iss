@@ -2,7 +2,7 @@
 ;由 Inno Setup 脚本向导 生成的脚本,有关创建 INNO SETUP 脚本文件的详细信息，请参阅文档！!
 
 #define MyAppName "记单词"
-#define MyAppVersion "1.0"
+#define MyAppVersion "1.1"
 #define MyAppPublisher "刘嘉晟"
 #define MyAppExeName "记单词.exe"
 
@@ -36,7 +36,6 @@ WizardStyle=modern
 
 [Languages]
 Name: "chs"; MessagesFile: "compiler:Default.isl"
-Name: "english"; MessagesFile: "compiler:Languages\English.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
