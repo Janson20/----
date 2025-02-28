@@ -42,7 +42,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "G:\Python\比赛作品\编译\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "G:\Python\比赛作品\编译\word_book.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "G:\Python\比赛作品\编译\wordbook.json"; DestDir: "{app}"; Flags: ignoreversion
 ; 注意:  在任何共享系统文件上不要使用 "Flags: ignoreversion"
 
 [Icons]
