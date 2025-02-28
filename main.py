@@ -1,13 +1,17 @@
 import tkinter as tk
-from tkinter import messagebox, simpledialog
+from tkinter import messagebox, simpledialog, scrolledtext
 import json
 import random
 import webbrowser
-
+import requests
+import threading
+from tkinter.ttk import Progressbar
+import hashlib
+import bisect  # 新增导入bisect模块
 class Word:
     def __init__(self, word, meaning):
-        self.word = word
-        self.meaning = meaning
+        self.word = word.strip().lower()  # 统一存储为小写
+        self.meaning = meaning.strip()
 
 class WordBook:
     def __init__(self, filename):
@@ -17,133 +21,223 @@ class WordBook:
     def load_words(self):
         try:
             with open(self.filename, 'r', encoding='utf-8') as file:
-                words_data = json.load(file)
-                return [Word(word['word'], word['meaning']) for word in words_data]
-        except FileNotFoundError:
+                words = [Word(item['word'], item['meaning']) for item in json.load(file)]
+                words.sort(key=lambda x: x.word)  # 加载后按单词排序
+                return words
+        except (FileNotFoundError, json.JSONDecodeError):
             return []
 
     def save_words(self):
-        words_data = [{'word': word.word, 'meaning': word.meaning} for word in self.words]
         with open(self.filename, 'w', encoding='utf-8') as file:
-            json.dump(words_data, file, ensure_ascii=False, indent=4)
+            json.dump([{'word': w.word, 'meaning': w.meaning} for w in self.words], 
+                     file, ensure_ascii=False, indent=2)
 
     def add_word(self, word, meaning):
+        if not word or not meaning:
+            raise ValueError("单词和释义不能为空")
+        if any(w.word == word.lower() for w in self.words):
+            raise ValueError("单词已存在")
         new_word = Word(word, meaning)
-        self.words.append(new_word)
+        # 使用bisect找到插入位置以保持有序
+        words_keys = [w.word for w in self.words]
+        insert_pos = bisect.bisect_left(words_keys, new_word.word)
+        self.words.insert(insert_pos, new_word)
         self.save_words()
 
     def remove_word(self, word):
-        for w in self.words:
-            if w.word == word:
-                self.words.remove(w)
-                self.save_words()
-                return
+        target = word.lower()
+        original_count = len(self.words)
+        self.words = [w for w in self.words if w.word != target]
+        if len(self.words) < original_count:
+            self.save_words()
+            return True
+        return False
 
-    def search_word(self, word):
-        for w in self.words:
-            if w.word == word:
-                return w
-        return None
+    def search_local(self, word):
+        target = word.lower()
+        return next((w for w in self.words if w.word == target), None)
 
-    def show_all_words(self):
-        return [(word.word, word.meaning) for word in self.words]
+    @staticmethod
+    def search_online(word):
+        try:
+            response = requests.get(
+                f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}",
+                timeout=10
+            )
+            if response.ok:
+                return "\n".join(
+                    f"{i+1}. {defn['definition']}" 
+                    for entry in response.json()
+                    for meaning in entry.get('meanings', [])
+                    for i, defn in enumerate(meaning.get('definitions', []))
+                )
+            else:
+                return "未找到释义"
+        except requests.exceptions.RequestException as e:
+            return "查询失败，请检查网络连接或稍后再试"
 
-    def review_words(self):
-        if not self.words:
-            return []
-        review_list = []
-        for _ in range(len(self.words)):
-            review_word = random.choice(self.words)
-            review_mode = random.choice(['英译中', '中译英'])
-            review_list.append((review_word, review_mode))
-        return review_list
 
 class MainWindow:
     def __init__(self, root):
         self.root = root
-        self.root.title("记单词程序")
-        self.wordBook = WordBook('word_book.json')
+        self.root.title("智能单词本 v2.0")
+        self.wordbook = WordBook('wordbook.json')
+        
+        # 界面布局优化
+        self.setup_ui()
+        self.review_running = False  # 复习模式状态控制
+        
+    def setup_ui(self):
+        input_frame = tk.Frame(self.root)
+        input_frame.pack(padx=10, pady=10, fill=tk.X)
+        
+        tk.Label(input_frame, text="单词:").grid(row=0, column=0, sticky='e')
+        self.word_entry = tk.Entry(input_frame, width=25)
+        self.word_entry.grid(row=0, column=1, padx=5)
+        
+        tk.Label(input_frame, text="释义:").grid(row=1, column=0, sticky='e')
+        self.meaning_entry = tk.Entry(input_frame, width=25)
+        self.meaning_entry.grid(row=1, column=1, padx=5)
+        
+        btn_frame = tk.Frame(self.root)
+        btn_frame.pack(pady=5)
+        
+        actions = [
+            ("添加单词", self.add_word),
+            ("删除单词", self.remove_word),
+            ("本地查询", self.search_local),
+            ("联网查询", self.search_online),
+            ("显示全部", self.show_all),
+            ("开始复习", self.start_review),
+            ("帮助文档", self.show_help)
+        ]
+        
+        for i, (text, cmd) in enumerate(actions):
+            tk.Button(btn_frame, text=text, width=10, command=cmd)\
+                .grid(row=i//2, column=i%2, padx=5, pady=3)
+                
+        self.status_bar = tk.Label(self.root, text="就绪", bd=1, relief=tk.SUNKEN, anchor=tk.W)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
-        tk.Label(root, text="单词：").grid(row=0, column=0)
-        self.word_entry = tk.Entry(root)
-        self.word_entry.grid(row=0, column=1)
-
-        tk.Label(root, text="意思：").grid(row=1, column=0)
-        self.meaning_entry = tk.Entry(root)
-        self.meaning_entry.grid(row=1, column=1)
-
-        tk.Button(root, text="添加单词", command=self.add_word).grid(row=2, column=0, columnspan=2)
-        tk.Button(root, text="删除单词", command=self.remove_word).grid(row=3, column=0, columnspan=2)
-        tk.Button(root, text="查找单词", command=self.search_word).grid(row=4, column=0, columnspan=2)
-        tk.Button(root, text="显示所有单词", command=self.show_all_words).grid(row=5, column=0, columnspan=2)
-        tk.Button(root, text="复习单词", command=self.review_words).grid(row=6, column=0, columnspan=2)
-        tk.Button(root, text="帮助", command=self.open_help).grid(row=7, column=0, columnspan=2)  # 添加帮助按钮
-
+    # 核心功能方法改进
     def add_word(self):
-        word = self.word_entry.get().strip()
-        meaning = self.meaning_entry.get().strip()
-        if word and meaning:
-            self.wordBook.add_word(word, meaning)
-            messagebox.showinfo("提示", f"单词 '{word}' 已添加到单词本并保存到本地文件。")
-            self.word_entry.delete(0, tk.END)
-            self.meaning_entry.delete(0, tk.END)
-        else:
-            messagebox.showwarning("错误", "单词和意思不能为空！")
+        word = self.word_entry.get()
+        meaning = self.meaning_entry.get()
+        try:
+            self.wordbook.add_word(word, meaning)
+            self.update_status(f"成功添加: {word}")
+            self.clear_entries()
+        except ValueError as e:
+            messagebox.showwarning("输入错误", str(e))
 
     def remove_word(self):
         word = self.word_entry.get().strip()
         if word:
-            self.wordBook.remove_word(word)
-            messagebox.showinfo("提示", f"单词 '{word}' 已从单词本中移除并更新本地文件。")
+            if self.wordbook.remove_word(word):
+                self.update_status(f"已删除: {word}")
+            else:
+                messagebox.showinfo("提示", "单词不存在")
         else:
-            messagebox.showwarning("错误", "请输入要删除的单词！")
+            messagebox.showwarning("错误", "请输入要删除的单词")
 
-    def search_word(self):
+    def search_local(self):
         word = self.word_entry.get().strip()
         if word:
-            found_word = self.wordBook.search_word(word)
-            if found_word:
-                messagebox.showinfo("提示", f"单词 '{word}' 的意思是：'{found_word.meaning}'")
+            found = self.wordbook.search_local(word)
+            if found:
+                self.show_result(f"{word} 的释义", found.meaning)
             else:
-                messagebox.showinfo("提示", f"单词 '{word}' 不在单词本中。")
-        else:
-            messagebox.showwarning("错误", "请输入要查找的单词！")
+                messagebox.showinfo("提示", "本地词库未收录该单词")
 
-    def show_all_words(self):
-        words = self.wordBook.show_all_words()
-        if words:
-            message = "\n".join([f"{word} - {meaning}" for word, meaning in words])
-            messagebox.showinfo("单词本中的单词", message)
-        else:
-            messagebox.showinfo("提示", "单词本为空。")
+    def search_online(self):
+        def fetch_definition():
+            self.toggle_loading(True)
+            try:
+                word = self.word_entry.get().strip()
+                if not word:
+                    return
+                definition = WordBook.search_online(word)
+                self.root.after(0, lambda: self.show_result(f"{word} 的联网释义", definition))
+            finally:
+                self.toggle_loading(False)
+                
+        threading.Thread(target=fetch_definition, daemon=True).start()
 
-    def review_words(self):
-        review_list = self.wordBook.review_words()
-        if not review_list:
-            messagebox.showinfo("提示", "单词本为空，无法复习。")
+    def show_all(self):
+        top = tk.Toplevel(self.root)
+        top.title("全部单词")
+        
+        text_area = scrolledtext.ScrolledText(top, wrap=tk.WORD, width=50, height=20)
+        text_area.pack(padx=10, pady=10)
+        
+        content = "\n".join(f"• {w.word:15}{w.meaning}" for w in self.wordbook.words)
+        text_area.insert(tk.END, content or "词库为空")
+        text_area.configure(state=tk.DISABLED)
+
+    def start_review(self):
+        if not self.wordbook.words:
+            messagebox.showinfo("提示", "词库为空，请先添加单词")
             return
-        messagebox.showinfo("提示", "开始复习单词...")
-        for review_word, review_mode in review_list:
-            if review_mode == '英译中':
-                user_answer = simpledialog.askstring("复习单词", f"请回忆单词 '{review_word.word}' 的意思：")
-                if user_answer.strip().lower() == review_word.meaning.strip().lower():
-                    messagebox.showinfo("提示", "回答正确！")
-                elif user_answer == None:
-                    self.root.destroy()
-                else:
-                    messagebox.showinfo("提示", f"回答错误，正确意思是：'{review_word.meaning}'")
-            else:
-                user_answer = simpledialog.askstring("复习单词", f"请回忆意思为 '{review_word.meaning}' 的单词：")
-                if user_answer.strip().lower() == review_word.word.strip().lower():
-                    messagebox.showinfo("提示", "回答正确！")
-                elif user_answer == None:
-                    self.root.destroy()
-                else:
-                    messagebox.showinfo("提示", f"回答错误，正确单词是：'{review_word.word}'")
-    def open_help(self):
-        help_url = "https://github.com/Janson20/----/wiki/%E5%B8%AE%E5%8A%A9%E4%B8%BB%E9%A1%B5"  # 替换为实际的帮助网站 URL
-        webbrowser.open(help_url)
+            
+        self.review_running = True
+        self.review_words = random.sample(self.wordbook.words, len(self.wordbook.words))
+        self.next_question()
 
+    def next_question(self):
+        if not self.review_running or not self.review_words:
+            self.review_running = False
+            return
+            
+        word = self.review_words.pop(0)
+        mode = random.choice(['英译中', '中译英'])
+        
+        prompt = (f"请输入'{word.word}'的释义：" if mode == '英译中' else 
+                 f"请输入对应'{word.meaning}'的单词：")
+                 
+        answer = simpledialog.askstring("复习模式", prompt)
+        
+        if answer is None:  # 用户点击取消
+            self.review_running = False
+            return
+            
+        correct = (answer.strip().lower() == word.meaning.lower() if mode == '英译中' else
+                  answer.strip().lower() == word.word.lower())
+                  
+        msg = "正确！" if correct else f"错误，正确答案是：{word.meaning if mode == '英译中' else word.word}"
+        messagebox.showinfo("结果", msg)
+        
+        self.root.after(100, self.next_question)  # 延迟下个问题
+
+    # 辅助方法
+    def toggle_loading(self, show):
+        if show:
+            self.loading = Progressbar(self.status_bar, mode='indeterminate')
+            self.loading.pack(side=tk.RIGHT)
+            self.loading.start(10)
+        else:
+            if hasattr(self, 'loading'):
+                self.loading.stop()
+                self.loading.destroy()
+
+    def update_status(self, message):
+        self.status_bar.config(text=message)
+        self.root.after(3000, lambda: self.status_bar.config(text="就绪"))
+
+    def clear_entries(self):
+        self.word_entry.delete(0, tk.END)
+        self.meaning_entry.delete(0, tk.END)
+
+    def show_result(self, title, content):
+        top = tk.Toplevel(self.root)
+        top.title(title)
+        
+        text = scrolledtext.ScrolledText(top, wrap=tk.WORD, width=50, height=15)
+        text.pack(padx=10, pady=10)
+        text.insert(tk.END, content)
+        text.configure(state=tk.DISABLED)
+
+    def show_help(self):
+        webbrowser.open("https://github.com/Janson20/----/wiki/%E7%AE%80%E4%BB%8B")
 
 if __name__ == "__main__":
     root = tk.Tk()

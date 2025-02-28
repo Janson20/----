@@ -1,10 +1,10 @@
 ;汉化：MonKeyDu 
 ;由 Inno Setup 脚本向导 生成的脚本,有关创建 INNO SETUP 脚本文件的详细信息，请参阅文档！!
 
-#define MyAppName "记单词"
-#define MyAppVersion "1.1"
+#define MyAppName "智能单词本"
+#define MyAppVersion "2.0"
 #define MyAppPublisher "刘嘉晟"
-#define MyAppExeName "记单词.exe"
+#define MyAppExeName "智能单词本.exe"
 
 [Setup]
 ;注意：AppId 的值唯一标识此应用程序。请勿在安装程序中对其他应用程序使用相同的 AppId 值。
